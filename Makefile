@@ -101,7 +101,7 @@ build/zImage: linux/arch/arm/boot/zImage | build
 
 ### Device Tree ###
 
-linux/arch/arm/boot/dts/%.dtb: TOOLCHAIN linux/arch/arm/boot/dts/%.dts  linux/arch/arm/boot/dts/zynq-pluto-sdr.dtsi
+linux/arch/arm/boot/dts/%.dtb: TOOLCHAIN linux/arch/arm/boot/dts/%.dts  linux/arch/arm/boot/dts/zynq-pluto-sdr.dtsi linux/arch/arm/boot/dts/zynq-pluto-rte.dtsi
 	$(TOOLS_PATH) DTC_FLAGS=-@ make -C linux -j $(NCORES) ARCH=arm CROSS_COMPILE=$(CROSS_COMPILE) $(notdir $@)
 
 build/%.dtb: linux/arch/arm/boot/dts/%.dtb | build
