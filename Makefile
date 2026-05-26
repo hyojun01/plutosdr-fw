@@ -109,7 +109,18 @@ build/%.dtb: linux/arch/arm/boot/dts/%.dtb | build
 
 ### Buildroot ###
 
-buildroot/output/images/rootfs.cpio.gz:
+### RTE HTTP daemon ###
+
+rte-httpd/rte-httpd: TOOLCHAIN
+	$(TOOLS_PATH) make -C rte-httpd clean
+	$(TOOLS_PATH) make -C rte-httpd CROSS_COMPILE=$(CROSS_COMPILE)
+
+.PHONY: rte-httpd/rte-httpd
+
+buildroot/board/$(TARGET)/rte-httpd: rte-httpd/rte-httpd | build
+	cp $< $@
+
+buildroot/output/images/rootfs.cpio.gz: buildroot/board/$(TARGET)/rte-httpd
 	@echo device-fw $(VERSION)> $(CURDIR)/buildroot/board/$(TARGET)/VERSIONS
 	@$(foreach dir,$(VSUBDIRS),echo $(dir) $(shell cd $(dir) && git describe --abbrev=4 --dirty --always --tags) >> $(CURDIR)/buildroot/board/$(TARGET)/VERSIONS;)
 	make -C buildroot ARCH=arm zynq_$(TARGET)_defconfig
@@ -184,6 +195,7 @@ clean:
 	make -C linux clean
 	make -C buildroot clean
 	make -C hdl clean
+	make -C rte-httpd clean
 	rm -f $(notdir $(wildcard build/*))
 	rm -rf build/*
 
