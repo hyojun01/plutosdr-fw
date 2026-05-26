@@ -2,9 +2,6 @@
 	path = u-boot-xlnx
 	url = https://github.com/analogdevicesinc/u-boot-xlnx.git
 	branch = pluto
-[submodule "buildroot"]
-	path = buildroot
-	url = https://github.com/analogdevicesinc/buildroot.git
 [submodule "hdl"]
 	path = hdl
 	url = https://github.com/hyojun01/hdl.git
@@ -12,4 +9,8 @@
 [submodule "linux"]
 	path = linux
 	url = https://github.com/hyojun01/linux.git
+	branch = basic_rte
+[submodule "buildroot"]
+	path = buildroot
+	url = https://github.com/hyojun01/buildroot.git
 	branch = basic_rte
