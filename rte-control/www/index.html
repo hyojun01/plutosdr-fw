@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#071117">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="description" content="PlutoSDR RTE DUT semantic radar control console">
+  <title>Pluto RTE Console</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+
+  <header class="app-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="Pluto RTE Console 홈">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <span>
+          <span class="brand-name">PLUTO <b>RTE</b></span>
+          <span class="brand-subtitle">Radar target emulator</span>
+        </span>
+      </a>
+
+      <div class="status-cluster" aria-label="연결 및 하드웨어 상태">
+        <span class="status-pill" id="connection-pill" data-tone="idle">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="connection-text">연결 중</span>
+        </span>
+        <span class="status-pill" id="health-pill" data-tone="idle">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="health-text">상태 확인 중</span>
+        </span>
+        <span class="revision-pill" id="revision-pill">REV —</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell" id="main-content">
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">SEMANTIC CONTROL PLANE · MONOSTATIC RADAR</p>
+        <h1 id="page-title">장면을 설정하고,<br><span>양자화 결과까지 확인하세요.</span></h1>
+        <p class="hero-copy">
+          AD936x RF와 RTE DUT를 하나의 revision으로 적용합니다. 양의 속도는
+          <span class="formula">f<sub>d</sub> = −2vf<sub>c</sub>/c</span> 규약을 따릅니다.
+        </p>
+      </div>
+      <dl class="sync-card">
+        <div>
+          <dt>마지막 동기화</dt>
+          <dd><time id="last-sync" datetime="">—</time></dd>
+        </div>
+        <div>
+          <dt>API</dt>
+          <dd>same-origin · v1</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="alert alert-error" id="error-banner" role="alert" tabindex="-1" hidden>
+      <span class="alert-icon" aria-hidden="true">!</span>
+      <div class="alert-body">
+        <strong id="error-title">요청을 완료하지 못했습니다</strong>
+        <p id="error-message"></p>
+        <p class="alert-meta" id="error-meta" hidden></p>
+      </div>
+      <button class="icon-button" id="dismiss-error" type="button" aria-label="오류 메시지 닫기">×</button>
+    </section>
+
+    <section class="alert alert-warning" id="warning-banner" role="status" aria-live="polite" hidden>
+      <span class="alert-icon" aria-hidden="true">i</span>
+      <div class="alert-body">
+        <strong>하드웨어 적용 상태 알림</strong>
+        <p id="warning-message"></p>
+      </div>
+    </section>
+
+    <section class="alert alert-error degraded-banner" id="degraded-banner" role="alert" hidden>
+      <span class="alert-icon" aria-hidden="true">!</span>
+      <div class="alert-body">
+        <strong>하드웨어 상태를 확인할 수 없어 쓰기가 차단되었습니다</strong>
+        <p>실패한 복구 이후 RF 또는 register 상태를 신뢰할 수 없습니다. RTE 서비스와 하드웨어를 점검한 뒤 서비스를 재시작하세요.</p>
+      </div>
+    </section>
+
+    <section class="initialization-banner" id="initialization-banner" aria-labelledby="initialization-title" hidden>
+      <span class="initialization-index" aria-hidden="true">01</span>
+      <div>
+        <h2 id="initialization-title">첫 RTE 구성이 필요합니다</h2>
+        <p>현재 RF 값은 읽었습니다. 아래의 거리, 속도, 손실, 호흡 및 심박 필드를 모두 입력해 첫 원자적 트랜잭션을 적용하세요.</p>
+      </div>
+    </section>
+
+    <div class="workspace-grid">
+      <section class="panel control-panel" aria-labelledby="control-title">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">CONTROL</p>
+            <h2 id="control-title">장면 파라미터</h2>
+          </div>
+          <span class="transaction-label">RF + RTE / ATOMIC</span>
+        </div>
+
+        <form id="config-form">
+          <fieldset class="form-section">
+            <legend>
+              <span class="legend-index">01</span>
+              RF 컨텍스트
+            </legend>
+            <p class="section-note">실제 적용된 RX/TX 공통 값이 RTE 재계산의 기준이 됩니다.</p>
+            <div class="field-grid two-columns">
+              <div class="field">
+                <label for="rf-sample-rate">샘플 레이트</label>
+                <div class="input-with-unit">
+                  <input id="rf-sample-rate" name="sample_rate_hz" type="number" inputmode="numeric"
+                         min="1" max="9007199254740991" step="1" required
+                         aria-describedby="sample-rate-preview">
+                  <span class="unit">Hz</span>
+                </div>
+                <span class="field-preview" id="sample-rate-preview">—</span>
+              </div>
+              <div class="field">
+                <label for="rf-carrier">반송파</label>
+                <div class="input-with-unit">
+                  <input id="rf-carrier" name="carrier_hz" type="number" inputmode="numeric"
+                         min="1" max="9007199254740991" step="1" required
+                         aria-describedby="carrier-preview">
+                  <span class="unit">Hz</span>
+                </div>
+                <span class="field-preview" id="carrier-preview">—</span>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-section">
+            <legend>
+              <span class="legend-index">02</span>
+              벌크 장면
+            </legend>
+            <p class="section-note">양의 loss는 감쇠이며, 양의 반경 속도는 음의 Doppler를 만듭니다.</p>
+            <div class="field-grid three-columns">
+              <div class="field">
+                <label for="range-m">거리</label>
+                <div class="input-with-unit">
+                  <input id="range-m" name="range_m" type="number" inputmode="decimal"
+                         min="0" step="any" required placeholder="예: 2.0">
+                  <span class="unit">m</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="velocity-mps">반경 속도</label>
+                <div class="input-with-unit">
+                  <input id="velocity-mps" name="radial_velocity_mps" type="number" inputmode="decimal"
+                         step="any" required placeholder="예: −0.15">
+                  <span class="unit">m/s</span>
+                </div>
+              </div>
+              <div class="field">
+                <label for="loss-db">손실</label>
+                <div class="input-with-unit">
+                  <input id="loss-db" name="loss_db" type="number" inputmode="decimal"
+                         min="0" step="any" required placeholder="예: 12">
+                  <span class="unit">dB</span>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-section motion-section">
+            <legend>
+              <span class="legend-index">03</span>
+              Micro-Doppler
+            </legend>
+            <p class="section-note">정현파 변위 두 개를 합성합니다. 갱신 시 NCO 누산기의 기존 위상은 유지됩니다.</p>
+
+            <div class="motion-grid">
+              <section class="motion-card" aria-labelledby="respiration-title">
+                <div class="motion-heading">
+                  <span class="motion-glyph respiration-glyph" aria-hidden="true"></span>
+                  <div>
+                    <h3 id="respiration-title">호흡</h3>
+                    <p>A<sub>r</sub> sin(2πf<sub>r</sub>t + φ<sub>r</sub>)</p>
+                  </div>
+                </div>
+                <div class="field-grid motion-fields">
+                  <div class="field">
+                    <label for="resp-amplitude">진폭 A<sub>r</sub></label>
+                    <div class="input-with-unit compact">
+                      <input id="resp-amplitude" name="respiration_amplitude_m" type="number"
+                             inputmode="decimal" min="0" step="any" required placeholder="0.005">
+                      <span class="unit">m</span>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="resp-frequency">주파수 f<sub>r</sub></label>
+                    <div class="input-with-unit compact">
+                      <input id="resp-frequency" name="respiration_frequency_hz" type="number"
+                             inputmode="decimal" min="0" step="any" required placeholder="0.25">
+                      <span class="unit">Hz</span>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="resp-phase">위상 φ<sub>r</sub></label>
+                    <div class="input-with-unit compact">
+                      <input id="resp-phase" name="respiration_phase_rad" type="number"
+                             inputmode="decimal" step="any" required placeholder="0">
+                      <span class="unit">rad</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="motion-card" aria-labelledby="heartbeat-title">
+                <div class="motion-heading">
+                  <span class="motion-glyph heartbeat-glyph" aria-hidden="true"></span>
+                  <div>
+                    <h3 id="heartbeat-title">심박</h3>
+                    <p>A<sub>h</sub> sin(2πf<sub>h</sub>t + φ<sub>h</sub>)</p>
+                  </div>
+                </div>
+                <div class="field-grid motion-fields">
+                  <div class="field">
+                    <label for="heart-amplitude">진폭 A<sub>h</sub></label>
+                    <div class="input-with-unit compact">
+                      <input id="heart-amplitude" name="heartbeat_amplitude_m" type="number"
+                             inputmode="decimal" min="0" step="any" required placeholder="0.0005">
+                      <span class="unit">m</span>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="heart-frequency">주파수 f<sub>h</sub></label>
+                    <div class="input-with-unit compact">
+                      <input id="heart-frequency" name="heartbeat_frequency_hz" type="number"
+                             inputmode="decimal" min="0" step="any" required placeholder="1.2">
+                      <span class="unit">Hz</span>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="heart-phase">위상 φ<sub>h</sub></label>
+                    <div class="input-with-unit compact">
+                      <input id="heart-phase" name="heartbeat_phase_rad" type="number"
+                             inputmode="decimal" step="any" required placeholder="0">
+                      <span class="unit">rad</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </fieldset>
+
+          <div class="form-actions">
+            <button class="button button-primary" id="apply-button" type="submit" disabled>
+              <span id="apply-button-text">구성 적용</span>
+              <span class="button-arrow" aria-hidden="true">→</span>
+            </button>
+            <button class="button button-secondary" id="revert-button" type="button" disabled>편집 취소</button>
+            <button class="button button-ghost" id="refresh-button" type="button" disabled>상태 새로고침</button>
+            <output class="form-status" id="form-status" aria-live="polite"></output>
+          </div>
+        </form>
+      </section>
+
+      <aside class="side-stack" aria-label="시스템 및 RTE 한계">
+        <section class="panel compact-panel" aria-labelledby="system-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <p class="section-kicker">SYSTEM</p>
+              <h2 id="system-title">실제 RF 상태</h2>
+            </div>
+            <span class="live-indicator"><span aria-hidden="true"></span>READBACK</span>
+          </div>
+          <dl class="metric-list" id="system-metrics">
+            <div><dt>Sample rate</dt><dd id="actual-sample-rate">—</dd></div>
+            <div><dt>Carrier</dt><dd id="actual-carrier">—</dd></div>
+            <div><dt>RX LO</dt><dd id="actual-rx-lo">—</dd></div>
+            <div><dt>TX LO</dt><dd id="actual-tx-lo">—</dd></div>
+            <div><dt>Hardware build</dt><dd id="hardware-build">—</dd></div>
+            <div><dt>State</dt><dd id="hardware-state">—</dd></div>
+          </dl>
+        </section>
+
+        <section class="panel compact-panel capability-panel" aria-labelledby="capability-title">
+          <div class="panel-heading compact-heading">
+            <div>
+              <p class="section-kicker">LIMITS</p>
+              <h2 id="capability-title">현재 성능 한계</h2>
+            </div>
+            <span class="capability-revision" id="capability-revision">REV —</span>
+          </div>
+          <p class="panel-intro">현재 AD936x readback으로 계산된 입력 한계와 해상도입니다.</p>
+          <dl class="capability-grid" id="capability-metrics">
+            <div><dt>최대 거리</dt><dd id="max-range">—</dd></div>
+            <div><dt>최대 |속도|</dt><dd id="max-velocity">—</dd></div>
+            <div><dt>위상 해상도</dt><dd id="phase-resolution">—</dd></div>
+            <div><dt>주파수 해상도</dt><dd id="frequency-resolution">—</dd></div>
+            <div class="wide"><dt>최대 motion 진폭</dt><dd id="max-motion-amplitude">—</dd></div>
+          </dl>
+          <p class="inline-state" id="capability-state" role="status"></p>
+        </section>
+      </aside>
+    </div>
+
+    <section class="readback-section" aria-labelledby="readback-title">
+      <div class="section-heading-row">
+        <div>
+          <p class="section-kicker">STATE INSPECTOR</p>
+          <h2 id="readback-title">요청값과 실제 적용값</h2>
+        </div>
+        <p>고정소수점 및 NCO 양자화 이후 값을 한눈에 비교합니다.</p>
+      </div>
+
+      <div class="readback-grid">
+        <article class="panel data-panel" aria-labelledby="requested-title">
+          <div class="data-panel-heading">
+            <h3 id="requested-title">Requested</h3>
+            <span>SEMANTIC INPUT</span>
+          </div>
+          <div class="empty-state" id="requested-empty">
+            <span aria-hidden="true">∅</span>
+            <p>아직 요청된 RTE 구성이 없습니다.</p>
+          </div>
+          <div class="table-wrap" id="requested-table-wrap" hidden>
+            <table class="data-table">
+              <caption class="visually-hidden">사용자가 요청한 RTE 파라미터</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Value</th></tr></thead>
+              <tbody id="requested-table-body"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel data-panel applied-panel" aria-labelledby="applied-title">
+          <div class="data-panel-heading">
+            <h3 id="applied-title">Applied</h3>
+            <span>QUANTIZED READBACK</span>
+          </div>
+          <div class="empty-state" id="applied-empty">
+            <span aria-hidden="true">∅</span>
+            <p>첫 트랜잭션 후 양자화 결과가 표시됩니다.</p>
+          </div>
+          <div class="table-wrap" id="applied-table-wrap" hidden>
+            <table class="data-table">
+              <caption class="visually-hidden">FPGA에 실제 적용된 RTE 파라미터</caption>
+              <thead><tr><th scope="col">Parameter</th><th scope="col">Applied value</th></tr></thead>
+              <tbody id="applied-table-body"></tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <details class="panel register-panel" id="register-panel">
+      <summary>
+        <span>
+          <span class="section-kicker">DIAGNOSTICS</span>
+          <strong>AXI4-Lite register image</strong>
+        </span>
+        <span class="summary-meta"><span id="register-count">0</span> WORDS <span class="chevron" aria-hidden="true">⌄</span></span>
+      </summary>
+      <div class="register-content">
+        <p>읽기 전용 진단값입니다. 모든 파라미터는 하나의 <code>loadParam</code> 트랜잭션으로 커밋됩니다.</p>
+        <div class="empty-state compact-empty" id="register-empty">
+          <p>적용된 register image가 없습니다.</p>
+        </div>
+        <div class="table-wrap" id="register-table-wrap" hidden>
+          <table class="data-table register-table">
+            <caption class="visually-hidden">적용된 AXI4-Lite 레지스터 워드</caption>
+            <thead><tr><th scope="col">Register</th><th scope="col">Word</th></tr></thead>
+            <tbody id="register-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  </main>
+
+  <footer class="app-footer">
+    <div>
+      <span>PLUTO RTE CONTROL PLANE</span>
+      <span aria-hidden="true">·</span>
+      <span>Phase-continuous updates</span>
+    </div>
+    <p>Raw register writes are intentionally unavailable.</p>
+  </footer>
+</body>
+</html>

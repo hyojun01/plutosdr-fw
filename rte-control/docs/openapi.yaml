@@ -1,0 +1,322 @@
+openapi: 3.0.3
+info:
+  title: Pluto RTE Control API
+  version: 1.0.0
+  description: >-
+    Semantic, monostatic-radar control of one AD936x PHY and one RTE DUT.
+    Positive velocity follows fd=-2*v*fc/c and positive loss_db is attenuation.
+servers:
+  - url: http://192.168.2.1:8080
+paths:
+  /api/v1:
+    get:
+      summary: List the versioned API endpoints
+      responses:
+        '200':
+          description: API index
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api_version, endpoints]
+                properties:
+                  api_version: {type: string, enum: [v1]}
+                  endpoints:
+                    type: array
+                    items: {type: string}
+  /healthz:
+    get:
+      summary: Process and hardware-state readiness
+      responses:
+        '200':
+          description: Hardware state is known
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: Hardware state became unknown after failed recovery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /api/v1/system:
+    get:
+      summary: Complete control-plane snapshot
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/rf/config:
+    get:
+      summary: Complete snapshot including actual RF state
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+    patch:
+      summary: Update AD936x RF state and re-encode the current RTE model
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RfPatch'}
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/rte/config:
+    get:
+      summary: Complete snapshot including requested and applied RTE state
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+    patch:
+      summary: Update physical RTE parameters without resetting NCO state
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RtePatch'}
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/config:
+    patch:
+      summary: Apply one serialized RF and RTE transaction
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rf: {$ref: '#/components/schemas/RfPatch'}
+                rte: {$ref: '#/components/schemas/RtePatch'}
+              additionalProperties: false
+              minProperties: 1
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/rte/status:
+    get:
+      summary: Complete requested, applied, and diagnostic snapshot
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+  /api/v1/rte/capabilities:
+    get:
+      summary: Limits calculated from the current actual RF state
+      responses:
+        '200':
+          description: Current capabilities
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Capabilities'}
+        '422': {$ref: '#/components/responses/Error'}
+components:
+  parameters:
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Numeric ETag returned by a prior state response.
+      schema: {type: string, pattern: '^"?[0-9]+"?$'}
+  headers:
+    ETag:
+      description: Quoted monotonically increasing in-process revision.
+      schema: {type: string, example: '"3"'}
+  responses:
+    Snapshot:
+      description: Current serialized state
+      headers:
+        ETag: {$ref: '#/components/headers/ETag'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Snapshot'}
+    Error:
+      description: Request, conflict, RF, or hardware failure
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+  schemas:
+    RfPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        sample_rate_hz:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+        carrier_hz:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 9007199254740991
+    MotionPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        amplitude_m: {type: number, format: double, minimum: 0}
+        frequency_hz: {type: number, format: double, minimum: 0}
+        phase_rad: {type: number, format: double}
+    Motion:
+      allOf:
+        - $ref: '#/components/schemas/MotionPatch'
+        - type: object
+          required: [amplitude_m, frequency_hz, phase_rad]
+    RtePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        range_m: {type: number, format: double, minimum: 0}
+        radial_velocity_mps: {type: number, format: double}
+        loss_db: {type: number, format: double, minimum: 0}
+        respiration: {$ref: '#/components/schemas/MotionPatch'}
+        heartbeat: {$ref: '#/components/schemas/MotionPatch'}
+    RteConfig:
+      allOf:
+        - $ref: '#/components/schemas/RtePatch'
+        - type: object
+          required:
+            - range_m
+            - radial_velocity_mps
+            - loss_db
+            - respiration
+            - heartbeat
+          properties:
+            respiration: {$ref: '#/components/schemas/Motion'}
+            heartbeat: {$ref: '#/components/schemas/Motion'}
+    RfState:
+      type: object
+      required: [sample_rate_hz, carrier_hz, rx_lo_hz, tx_lo_hz]
+      properties:
+        sample_rate_hz: {type: integer, format: int64}
+        carrier_hz: {type: integer, format: int64}
+        rx_lo_hz: {type: integer, format: int64}
+        tx_lo_hz: {type: integer, format: int64}
+    MotionApplied:
+      type: object
+      required:
+        - amplitude_m
+        - frequency_hz
+        - phase_rad
+        - phase_gain_cycles
+        - max_doppler_hz
+      properties:
+        amplitude_m: {type: number, format: double}
+        frequency_hz: {type: number, format: double}
+        phase_rad: {type: number, format: double}
+        phase_gain_cycles: {type: number, format: double}
+        max_doppler_hz: {type: number, format: double}
+    RegisterImage:
+      type: object
+      readOnly: true
+      additionalProperties:
+        type: string
+        pattern: '^0x[0-9a-f]{8}$'
+    AppliedState:
+      type: object
+      required:
+        - range
+        - doppler_hz
+        - radial_velocity_mps
+        - scaling_raw
+        - linear_gain
+        - muted
+        - loss_db
+        - respiration
+        - heartbeat
+        - registers
+      properties:
+        range:
+          type: object
+          required: [delay_samples, delay_range_m, phase_rad]
+          properties:
+            delay_samples: {type: integer, minimum: 0, maximum: 1023}
+            delay_range_m: {type: number, format: double}
+            phase_rad: {type: number, format: double}
+        doppler_hz: {type: number, format: double}
+        radial_velocity_mps: {type: number, format: double}
+        scaling_raw: {type: integer, minimum: 0, maximum: 32767}
+        linear_gain: {type: number, format: double}
+        muted: {type: boolean}
+        loss_db: {type: number, format: double, nullable: true}
+        respiration: {$ref: '#/components/schemas/MotionApplied'}
+        heartbeat: {$ref: '#/components/schemas/MotionApplied'}
+        registers: {$ref: '#/components/schemas/RegisterImage'}
+    Snapshot:
+      type: object
+      required:
+        - revision
+        - hardware_build_id
+        - hardware_state_known
+        - rf
+        - requested
+        - applied
+        - warning
+      properties:
+        revision: {type: integer, format: int64, minimum: 0}
+        hardware_build_id: {type: integer, format: int64, example: 2608142020}
+        hardware_state_known:
+          type: boolean
+          description: >-
+            False before the first complete RTE transaction or after an
+            unrecoverable rollback. In the latter case writes are blocked.
+        rf: {$ref: '#/components/schemas/RfState'}
+        requested:
+          allOf: [{$ref: '#/components/schemas/RteConfig'}]
+          nullable: true
+        applied:
+          allOf: [{$ref: '#/components/schemas/AppliedState'}]
+          nullable: true
+        warning:
+          type: string
+          nullable: true
+          description: Persistence pending, disabled, or failed; hardware may already be applied.
+    Health:
+      type: object
+      required: [status, hardware_state_known]
+      properties:
+        status: {type: string, enum: [ok, degraded]}
+        hardware_state_known: {type: boolean}
+    Capabilities:
+      type: object
+      required:
+        - revision
+        - max_range_m
+        - max_abs_velocity_mps
+        - phase_resolution_rad
+        - frequency_resolution_hz
+        - max_motion_amplitude_m
+      properties:
+        revision: {type: integer, format: int64}
+        max_range_m: {type: number, format: double}
+        max_abs_velocity_mps: {type: number, format: double}
+        phase_resolution_rad: {type: number, format: double}
+        frequency_resolution_hz: {type: number, format: double}
+        max_motion_amplitude_m: {type: number, format: double}
+    ErrorResponse:
+      type: object
+      required: [error, revision]
+      properties:
+        error:
+          type: object
+          required: [code, field, message]
+          properties:
+            code: {type: string}
+            field: {type: string}
+            message: {type: string}
+        revision: {type: integer, format: int64, minimum: 0}
