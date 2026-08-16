@@ -5,6 +5,8 @@ VIVADO_VERSION ?= 2023.2
 CROSS_COMPILE = arm-linux-gnueabihf-
 TOOLS_PATH = PATH="$(CURDIR)/buildroot/output/host/bin:$(CURDIR)/buildroot/output/host/sbin:$(PATH)"
 TOOLCHAIN = $(CURDIR)/buildroot/output/host/bin/$(CROSS_COMPILE)gcc
+BUILDROOT_CONFIG = buildroot/configs/zynq_$(TARGET)_defconfig
+BUILDROOT_PROFILE_STAMP = buildroot/output/.plutosdr-fw-profile
 
 NCORES = $(shell grep -c ^processor /proc/cpuinfo)
 VIVADO_SETTINGS ?= /opt/Xilinx/Vivado/$(VIVADO_VERSION)/settings64.sh
@@ -58,9 +60,30 @@ endif
 
 TARGET_DTS_FILES:=$(foreach dts,$(TARGET_DTS_FILES),build/$(dts))
 
-TOOLCHAIN:
-	make -C buildroot ARCH=arm zynq_$(TARGET)_defconfig
-	make -C buildroot toolchain
+.PHONY: buildroot-profile-check buildroot-config TOOLCHAIN
+
+buildroot-profile-check:
+	@set -e; \
+	desired="v2:$(TARGET):$$(sha256sum "$(BUILDROOT_CONFIG)" | cut -d ' ' -f 1)"; \
+	previous="$$(sed -n '1p' "$(BUILDROOT_PROFILE_STAMP)" 2>/dev/null || true)"; \
+	expected_config="$$(sed -n '2p' "$(BUILDROOT_PROFILE_STAMP)" 2>/dev/null || true)"; \
+	current_config="$$(sha256sum buildroot/.config 2>/dev/null | cut -d ' ' -f 1 || true)"; \
+	if [ "$$desired" != "$$previous" ] || \
+	   [ -z "$$current_config" ] || \
+	   [ "$$current_config" != "$$expected_config" ]; then \
+		echo "Buildroot firmware profile changed; cleaning stale output"; \
+		$(MAKE) -C buildroot clean; \
+	fi
+
+buildroot-config: buildroot-profile-check
+	$(MAKE) -C buildroot ARCH=arm zynq_$(TARGET)_defconfig
+	@mkdir -p "$(dir $(BUILDROOT_PROFILE_STAMP))"
+	@desired="v2:$(TARGET):$$(sha256sum "$(BUILDROOT_CONFIG)" | cut -d ' ' -f 1)"; \
+	config_hash="$$(sha256sum buildroot/.config | cut -d ' ' -f 1)"; \
+	printf '%s\n%s\n' "$$desired" "$$config_hash" > "$(BUILDROOT_PROFILE_STAMP)"
+
+TOOLCHAIN: buildroot-config
+	$(MAKE) -C buildroot toolchain
 
 build:
 	mkdir -p $@
@@ -101,7 +124,7 @@ build/zImage: linux/arch/arm/boot/zImage | build
 
 ### Device Tree ###
 
-linux/arch/arm/boot/dts/%.dtb: TOOLCHAIN linux/arch/arm/boot/dts/%.dts  linux/arch/arm/boot/dts/zynq-pluto-sdr.dtsi
+linux/arch/arm/boot/dts/%.dtb: TOOLCHAIN linux/arch/arm/boot/dts/%.dts  linux/arch/arm/boot/dts/zynq-pluto-sdr.dtsi linux/arch/arm/boot/dts/zynq-pluto-rte.dtsi
 	$(TOOLS_PATH) DTC_FLAGS=-@ make -C linux -j $(NCORES) ARCH=arm CROSS_COMPILE=$(CROSS_COMPILE) $(notdir $@)
 
 build/%.dtb: linux/arch/arm/boot/dts/%.dtb | build
@@ -109,18 +132,17 @@ build/%.dtb: linux/arch/arm/boot/dts/%.dtb | build
 
 ### Buildroot ###
 
-buildroot/output/images/rootfs.cpio.gz:
+buildroot/output/images/rootfs.cpio.gz: TOOLCHAIN
 	@echo device-fw $(VERSION)> $(CURDIR)/buildroot/board/$(TARGET)/VERSIONS
 	@$(foreach dir,$(VSUBDIRS),echo $(dir) $(shell cd $(dir) && git describe --abbrev=4 --dirty --always --tags) >> $(CURDIR)/buildroot/board/$(TARGET)/VERSIONS;)
-	make -C buildroot ARCH=arm zynq_$(TARGET)_defconfig
 
 ifneq (1, ${SKIP_LEGAL})
-	make -C buildroot legal-info
+	$(MAKE) -C buildroot legal-info
 	scripts/legal_info_html.sh "$(COMPLETE_NAME)" "$(CURDIR)/buildroot/board/$(TARGET)/VERSIONS"
 	cp build/LICENSE.html buildroot/board/$(TARGET)/msd/LICENSE.html
 endif
 
-	make -C buildroot BUSYBOX_CONFIG_FILE=$(CURDIR)/buildroot/board/$(TARGET)/busybox-1.25.0.config all
+	$(MAKE) -C buildroot BUSYBOX_CONFIG_FILE=$(CURDIR)/buildroot/board/$(TARGET)/busybox-1.25.0.config all
 
 .PHONY: buildroot/output/images/rootfs.cpio.gz
 
@@ -130,24 +152,51 @@ build/rootfs.cpio.gz: buildroot/output/images/rootfs.cpio.gz | build
 build/$(TARGET).itb: u-boot-xlnx/tools/mkimage build/zImage build/rootfs.cpio.gz $(TARGET_DTS_FILES) build/system_top.bit
 	u-boot-xlnx/tools/mkimage -f scripts/$(TARGET).its $@
 
-build/system_top.xsa:  | build
+ifneq ($(XSA_FILE),)
+XSA_FILE_SHA256 := $(shell sha256sum "$(XSA_FILE)" 2>/dev/null | cut -d ' ' -f 1)
+XSA_BUILD_SHA256 := $(shell sha256sum build/system_top.xsa 2>/dev/null | cut -d ' ' -f 1)
+
+ifneq ($(XSA_FILE_SHA256),$(XSA_BUILD_SHA256))
+.PHONY: xsa-input-changed
+build/system_top.xsa: xsa-input-changed
+endif
+
+build/system_top.xsa: $(XSA_FILE) | build
+	cp $(XSA_FILE) $@
+else
+build/system_top.xsa: | build
 ifeq (1, ${HAVE_VIVADO})
 	bash -c "source $(VIVADO_SETTINGS) && make -C hdl/projects/$(TARGET) && cp hdl/projects/$(TARGET)/$(TARGET).sdk/system_top.xsa $@"
-	unzip -l $@ | grep -q ps7_init || cp hdl/projects/$(TARGET)/$(TARGET).srcs/sources_1/bd/system/ip/system_sys_ps7_0/ps7_init* build/
-else ifneq ($(XSA_FILE),)
-	cp $(XSA_FILE) $@
 else ifneq ($(XSA_URL),)
 	wget -T 3 -t 1 -N --directory-prefix build $(XSA_URL)
 endif
+endif
+
+build/ps7_init.tcl: build/system_top.xsa | build
+	@set -e; \
+	if unzip -Z1 $< | grep -Eq '(^|/)ps7_init\.tcl$$'; then \
+		unzip -j -o $< '*ps7_init.tcl' -d build; \
+	elif [ "$(HAVE_VIVADO)" = "1" ]; then \
+		cp hdl/projects/$(TARGET)/$(TARGET).gen/sources_1/bd/system/ip/system_sys_ps7_0/ps7_init.tcl $@; \
+	else \
+		echo "ps7_init.tcl is missing from $<" >&2; \
+		exit 1; \
+	fi; \
+	touch $@
 
 ### TODO: Build system_top.xsa from src if dl fails ...
 
-build/sdk/fsbl/Release/fsbl.elf build/system_top.bit : build/system_top.xsa
+build/system_top.bit: build/system_top.xsa
+	unzip -o $< system_top.bit -d build
+	touch $@
+
+build/sdk/fsbl/Release/fsbl.elf: build/system_top.xsa
 	rm -Rf build/sdk
 ifeq (1, ${HAVE_VIVADO})
 	bash -c "source $(VIVADO_SETTINGS) && xsct scripts/create_fsbl_project.tcl"
 else
-	unzip -o build/system_top.xsa system_top.bit -d build
+	@echo "Vivado XSCT is required to build the FSBL" >&2
+	@false
 endif
 
 build/boot.bin: build/sdk/fsbl/Release/fsbl.elf build/u-boot.elf
