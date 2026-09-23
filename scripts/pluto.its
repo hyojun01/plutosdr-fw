@@ -16,24 +16,24 @@
 	images {
 
 		fdt@1 {
-			description = "zynq-pluto-sdr";
-			data = /incbin/("../build/zynq-pluto-sdr.dtb");
+			description = "zynq-pluto-rte";
+			data = /incbin/("../build/zynq-pluto-rte.dtb");
 			type = "flat_dt";
 			arch = "arm";
 			compression = "none";
 		};
 
 		fdt@2 {
-			description = "zynq-pluto-sdr-revb";
-			data = /incbin/("../build/zynq-pluto-sdr-revb.dtb");
+			description = "zynq-pluto-rte-revb";
+			data = /incbin/("../build/zynq-pluto-rte-revb.dtb");
 			type = "flat_dt";
 			arch = "arm";
 			compression = "none";
 		};
 
 		fdt@3 {
-			description = "zynq-pluto-sdr-revc";
-			data = /incbin/("../build/zynq-pluto-sdr-revc.dtb");
+			description = "zynq-pluto-rte-revc";
+			data = /incbin/("../build/zynq-pluto-rte-revc.dtb");
 			type = "flat_dt";
 			arch = "arm";
 			compression = "none";
