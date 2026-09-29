@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#071117">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>Pluto Multi-Target RTE</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+  <header class="app-header"><div class="header-inner">
+    <a class="brand" href="/" aria-label="Pluto Multi-Target RTE 홈"><span class="brand-mark" aria-hidden="true"><span></span></span><span><span class="brand-name">PLUTO <b>RTE</b></span><span class="brand-subtitle">Multi-target control</span></span></a>
+    <div class="status-cluster"><span class="status-pill" id="connection-pill" data-tone="idle"><span class="status-dot" aria-hidden="true"></span><span id="connection-text">연결 중</span></span><span class="revision-pill" id="revision-pill">REV —</span></div>
+  </div></header>
+  <main class="shell" id="main-content">
+    <section class="hero" aria-labelledby="page-title"><div>
+      <p class="eyebrow">FOUR TARGETS · INDIVIDUAL LOADPARAM</p>
+      <h1 id="page-title">네 표적을 한눈에, <span>적용은 개별로.</span></h1>
+      <p class="hero-copy">각 패널에서 값을 편집하고 해당 표적의 <b>loadParam 적용</b> 버튼을 누르세요. RF 설정은 네 표적에 공통입니다.</p>
+    </div><dl class="sync-card"><div><dt>마지막 상태 조회</dt><dd id="last-sync">—</dd></div><div><dt>프로파일</dt><dd>multitarget-v2</dd></div></dl></section>
+    <section class="alert alert-error" id="error-banner" role="alert" hidden><div class="alert-body"><strong>요청을 완료하지 못했습니다</strong><p id="error-message"></p></div><button class="icon-button" id="dismiss-error" type="button" aria-label="오류 메시지 닫기">×</button></section>
+    <section class="alert alert-warning" id="warning-banner" role="status" hidden><div class="alert-body"><strong>상태 알림</strong><p id="warning-message"></p></div></section>
+    <section class="alert alert-error" id="degraded-banner" role="alert" hidden><div class="alert-body"><strong>복구 실패로 변경 요청이 차단되었습니다</strong><p>하드웨어와 RTE 서비스 상태를 확인하세요. 브라우저 편집값은 유지됩니다.</p></div></section>
+    <section class="target-workspace" aria-labelledby="target-title">
+      <div class="section-heading-row"><div><p class="section-kicker">FOUR TARGETS</p><h2 id="target-title">표적별 설정</h2></div><button class="button button-secondary" id="refresh-button" type="button">상태 새로고침</button></div>
+      <p class="section-note">반경 속도는 양수가 멀어지는 방향이며, 디지털 계수는 표적의 진폭 배율입니다. 편집과 활성화 체크는 각 표적의 loadParam을 눌러야 반영됩니다.</p>
+      <div class="target-grid">
+        <article class="panel target-panel" id="target-1-panel" aria-labelledby="target-1-title">
+          <div class="target-heading"><h3 id="target-1-title"><span class="target-number">01</span>표적 1</h3><span class="target-state" id="target-1-state" data-tone="idle">미확인</span></div>
+          <form id="target-1-form" aria-labelledby="target-1-title" aria-describedby="target-1-draft-status">
+            <label class="checkbox-field" for="target-1-enabled"><input id="target-1-enabled" name="enabled" type="checkbox">표적 활성화</label>
+            <div class="field-grid target-fields">
+              <div class="field"><label for="target-1-range-m">거리</label><div class="input-with-unit"><input id="target-1-range-m" name="range_m" type="number" step="any" required><span class="unit">m</span></div></div>
+              <div class="field"><label for="target-1-velocity-mps">반경 속도</label><div class="input-with-unit"><input id="target-1-velocity-mps" name="radial_velocity_mps" type="number" step="any" required><span class="unit">m/s</span></div></div>
+              <div class="field"><label for="target-1-gain-linear">디지털 계수</label><div class="input-with-unit"><input id="target-1-gain-linear" name="gain_linear" type="number" min="0" step="any" required><span class="unit">배</span></div></div>
+              <div class="field"><label for="target-1-phase-deg">추가 위상</label><div class="input-with-unit"><input id="target-1-phase-deg" name="phase_offset_deg" type="number" step="any" required><span class="unit">deg</span></div></div>
+            </div>
+            <p class="section-note draft-status" id="target-1-draft-status" aria-live="polite">서버 상태를 기다리는 중입니다.</p>
+            <div class="form-actions target-actions"><button class="button button-primary" id="target-1-apply" type="submit" aria-label="표적 1 loadParam 적용" disabled>loadParam 적용</button><button class="button button-secondary" id="target-1-revert" type="button" aria-label="표적 1 편집 초기화" disabled>편집 초기화</button><output class="form-status" id="target-1-status" aria-live="polite"></output></div>
+          </form>
+        </article>
+        <article class="panel target-panel" id="target-2-panel" aria-labelledby="target-2-title">
+          <div class="target-heading"><h3 id="target-2-title"><span class="target-number">02</span>표적 2</h3><span class="target-state" id="target-2-state" data-tone="idle">미확인</span></div>
+          <form id="target-2-form" aria-labelledby="target-2-title" aria-describedby="target-2-draft-status">
+            <label class="checkbox-field" for="target-2-enabled"><input id="target-2-enabled" name="enabled" type="checkbox">표적 활성화</label>
+            <div class="field-grid target-fields">
+              <div class="field"><label for="target-2-range-m">거리</label><div class="input-with-unit"><input id="target-2-range-m" name="range_m" type="number" step="any" required><span class="unit">m</span></div></div>
+              <div class="field"><label for="target-2-velocity-mps">반경 속도</label><div class="input-with-unit"><input id="target-2-velocity-mps" name="radial_velocity_mps" type="number" step="any" required><span class="unit">m/s</span></div></div>
+              <div class="field"><label for="target-2-gain-linear">디지털 계수</label><div class="input-with-unit"><input id="target-2-gain-linear" name="gain_linear" type="number" min="0" step="any" required><span class="unit">배</span></div></div>
+              <div class="field"><label for="target-2-phase-deg">추가 위상</label><div class="input-with-unit"><input id="target-2-phase-deg" name="phase_offset_deg" type="number" step="any" required><span class="unit">deg</span></div></div>
+            </div>
+            <p class="section-note draft-status" id="target-2-draft-status" aria-live="polite">서버 상태를 기다리는 중입니다.</p>
+            <div class="form-actions target-actions"><button class="button button-primary" id="target-2-apply" type="submit" aria-label="표적 2 loadParam 적용" disabled>loadParam 적용</button><button class="button button-secondary" id="target-2-revert" type="button" aria-label="표적 2 편집 초기화" disabled>편집 초기화</button><output class="form-status" id="target-2-status" aria-live="polite"></output></div>
+          </form>
+        </article>
+        <article class="panel target-panel" id="target-3-panel" aria-labelledby="target-3-title">
+          <div class="target-heading"><h3 id="target-3-title"><span class="target-number">03</span>표적 3</h3><span class="target-state" id="target-3-state" data-tone="idle">미확인</span></div>
+          <form id="target-3-form" aria-labelledby="target-3-title" aria-describedby="target-3-draft-status">
+            <label class="checkbox-field" for="target-3-enabled"><input id="target-3-enabled" name="enabled" type="checkbox">표적 활성화</label>
+            <div class="field-grid target-fields">
+              <div class="field"><label for="target-3-range-m">거리</label><div class="input-with-unit"><input id="target-3-range-m" name="range_m" type="number" step="any" required><span class="unit">m</span></div></div>
+              <div class="field"><label for="target-3-velocity-mps">반경 속도</label><div class="input-with-unit"><input id="target-3-velocity-mps" name="radial_velocity_mps" type="number" step="any" required><span class="unit">m/s</span></div></div>
+              <div class="field"><label for="target-3-gain-linear">디지털 계수</label><div class="input-with-unit"><input id="target-3-gain-linear" name="gain_linear" type="number" min="0" step="any" required><span class="unit">배</span></div></div>
+              <div class="field"><label for="target-3-phase-deg">추가 위상</label><div class="input-with-unit"><input id="target-3-phase-deg" name="phase_offset_deg" type="number" step="any" required><span class="unit">deg</span></div></div>
+            </div>
+            <p class="section-note draft-status" id="target-3-draft-status" aria-live="polite">서버 상태를 기다리는 중입니다.</p>
+            <div class="form-actions target-actions"><button class="button button-primary" id="target-3-apply" type="submit" aria-label="표적 3 loadParam 적용" disabled>loadParam 적용</button><button class="button button-secondary" id="target-3-revert" type="button" aria-label="표적 3 편집 초기화" disabled>편집 초기화</button><output class="form-status" id="target-3-status" aria-live="polite"></output></div>
+          </form>
+        </article>
+        <article class="panel target-panel" id="target-4-panel" aria-labelledby="target-4-title">
+          <div class="target-heading"><h3 id="target-4-title"><span class="target-number">04</span>표적 4</h3><span class="target-state" id="target-4-state" data-tone="idle">미확인</span></div>
+          <form id="target-4-form" aria-labelledby="target-4-title" aria-describedby="target-4-draft-status">
+            <label class="checkbox-field" for="target-4-enabled"><input id="target-4-enabled" name="enabled" type="checkbox">표적 활성화</label>
+            <div class="field-grid target-fields">
+              <div class="field"><label for="target-4-range-m">거리</label><div class="input-with-unit"><input id="target-4-range-m" name="range_m" type="number" step="any" required><span class="unit">m</span></div></div>
+              <div class="field"><label for="target-4-velocity-mps">반경 속도</label><div class="input-with-unit"><input id="target-4-velocity-mps" name="radial_velocity_mps" type="number" step="any" required><span class="unit">m/s</span></div></div>
+              <div class="field"><label for="target-4-gain-linear">디지털 계수</label><div class="input-with-unit"><input id="target-4-gain-linear" name="gain_linear" type="number" min="0" step="any" required><span class="unit">배</span></div></div>
+              <div class="field"><label for="target-4-phase-deg">추가 위상</label><div class="input-with-unit"><input id="target-4-phase-deg" name="phase_offset_deg" type="number" step="any" required><span class="unit">deg</span></div></div>
+            </div>
+            <p class="section-note draft-status" id="target-4-draft-status" aria-live="polite">서버 상태를 기다리는 중입니다.</p>
+            <div class="form-actions target-actions"><button class="button button-primary" id="target-4-apply" type="submit" aria-label="표적 4 loadParam 적용" disabled>loadParam 적용</button><button class="button button-secondary" id="target-4-revert" type="button" aria-label="표적 4 편집 초기화" disabled>편집 초기화</button><output class="form-status" id="target-4-status" aria-live="polite"></output></div>
+          </form>
+        </article>
+      </div>
+    </section>
+    <section class="panel control-panel rf-panel" aria-labelledby="rf-title">
+      <div class="panel-heading"><div><p class="section-kicker">RF PHY</p><h2 id="rf-title">RF 설정</h2></div></div>
+      <p class="section-note">RX/TX 공통 설정 · 대역폭 최대 40 MHz · TX 음수 게인은 감쇠입니다. LO 읽기값에는 최대 5 Hz의 반올림 차이가 있을 수 있습니다.</p>
+      <form id="rf-form"><div class="field-grid rf-fields">
+        <div class="field"><label for="rf-carrier">중심 주파수</label><div class="input-with-unit"><input id="rf-carrier" name="carrier_mhz" type="number" step="0.000001" required><span class="unit">MHz</span></div></div>
+        <div class="field"><label for="rf-bandwidth">대역폭</label><div class="input-with-unit"><input id="rf-bandwidth" name="bandwidth_mhz" type="number" step="0.000001" required><span class="unit">MHz</span></div></div>
+        <div class="field"><label for="rf-tx-gain">송신 게인</label><div class="input-with-unit"><input id="rf-tx-gain" name="tx_gain_db" type="number" step="0.25" required><span class="unit">dB</span></div></div>
+        <div class="field"><label for="rf-rx-gain">수신 게인 (manual)</label><div class="input-with-unit"><input id="rf-rx-gain" name="rx_gain_db" type="number" step="1" required><span class="unit">dB</span></div></div>
+      </div><div class="form-actions rf-actions"><button class="button button-primary" id="rf-apply" type="submit" disabled>RF 적용</button><button class="button button-secondary" id="rf-revert" type="button" disabled>편집 초기화</button><output class="form-status" id="rf-status" aria-live="polite"></output></div></form>
+    </section>
+    <div class="workspace-grid support-grid">
+        <section class="panel compact-panel" aria-labelledby="system-title"><div class="panel-heading"><h2 id="system-title">마지막 확인한 RF 상태</h2></div>
+          <dl class="metric-list"><div><dt>고정 샘플레이트</dt><dd id="actual-sample-rate">—</dd></div><div><dt>RX / TX LO</dt><dd id="actual-lo">—</dd></div><div><dt>RX / TX 대역폭</dt><dd id="actual-bandwidth">—</dd></div><div><dt>TX / RX 게인</dt><dd id="actual-gains">—</dd></div><div><dt>수신 게인 모드</dt><dd id="gain-mode">—</dd></div><div><dt>PHY compatible</dt><dd id="compatible">—</dd></div><div><dt>FPGA timestamp</dt><dd id="hardware-build">—</dd></div><div><dt>하드웨어 확인 시각¹</dt><dd id="hardware-check">—</dd></div></dl>
+          <p class="section-note">¹ 서버 monotonic clock 기준입니다. 5초 상태 조회가 RF/MMIO의 실시간 측정을 의미하지 않습니다.</p>
+        </section>
+        <section class="panel compact-panel" aria-labelledby="limits-title"><div class="panel-heading"><h2 id="limits-title">입력 범위 · 거리 기준</h2></div><dl class="metric-list"><div><dt>거리 범위</dt><dd id="range-limits">—</dd></div><div><dt>지연 양자화 거리 간격</dt><dd id="range-resolution">—</dd></div><div><dt>최대 |속도|</dt><dd id="velocity-limit">—</dd></div><div><dt>디지털 계수 최대</dt><dd id="gain-limit">—</dd></div><div><dt>거리 기준</dt><dd id="range-reference">—</dd></div><div><dt>RF 거리 보정</dt><dd id="rf-calibration">—</dd></div></dl><p class="section-note">디지털 계수 범위는 무왜곡 출력 범위가 아닙니다. 네 표적 합산과 입력 레벨에 따라 출력이 포화될 수 있습니다.</p></section>
+
+    </div>
+    <section class="readback-section" aria-labelledby="targets-title"><div class="section-heading-row"><div><p class="section-kicker">FOUR TARGETS</p><h2 id="targets-title">표적별 마지막 적용 상태</h2></div></div>
+      <div class="panel table-wrap"><table class="data-table"><caption class="visually-hidden">네 표적의 상태와 양자화 결과</caption><thead><tr><th>표적</th><th>상태</th><th>거리 / 지연</th><th>Doppler</th><th>현재 RF 환산 속도</th><th>계수</th><th>인코딩 LO</th></tr></thead><tbody id="targets-body"></tbody></table></div>
+      <p class="section-note readback-note">적용값은 서버가 확인한 마지막 성공 기록입니다. 현재 IP는 active bank의 독립 readback을 제공하지 않습니다. 저장값은 편집값으로만 불러오며 표적별로 직접 적용해야 합니다.</p>
+    </section>
+    <details class="panel register-panel"><summary><span><span class="section-kicker">DIAGNOSTICS</span><strong>표적별 레지스터 적용 기록</strong></span></summary><div class="register-content"><p>각 표적의 마지막 성공 register image입니다. 미확인 값은 표시하지 않습니다.</p><div class="table-wrap"><table class="data-table register-table"><thead><tr><th>표적</th><th>레지스터</th><th>주소</th><th>Hex 값</th></tr></thead><tbody id="registers-body"></tbody></table></div></div></details>
+  </main>
+  <footer class="app-footer"><span>PLUTO MULTI-TARGET RTE · AD9364</span><span>RF PHY + MathWorks AXI4-Lite</span></footer>
+</body>
+</html>

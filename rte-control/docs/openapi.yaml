@@ -1,0 +1,455 @@
+openapi: 3.0.3
+info:
+  title: Pluto Multi-Target RTE Control API
+  version: 2.0.0
+  description: >-
+    API v1 for the multitarget-v2 hardware profile (FPGA timestamp 2609182026).
+    RF and target changes are independent serialized operations. A target POST
+    stages six parameters and pulses only that target's LP 0 -> 1 -> 0. It never
+    writes RF or another target. RF PATCH never writes FPGA registers or LP.
+    Every mutation requires If-Match from a prior snapshot; after timeout or
+    conflict, retrieve state before deciding whether to apply again. There is
+    no bulk/combined mutation or raw-register API. PATCH /api/v1/rte/config
+    returns 405; /api/v1/config is absent (404).
+    Snapshot GETs return cached last-verified state, not live RF/MMIO measurements.
+    last_hardware_check_ms uses CLOCK_MONOTONIC, not Unix time. RF capabilities retrieval
+    observes actual RF as well as IIO availability; an observed external change
+    updates cached RF, revision, and target needs_reapply flags.
+    Persistent configuration uses schema_version=2, profile=multitarget-v2,
+    hardware_build_id, four RF fields, and target keys 1..4 (config or null) in
+    /mnt/jffs2/rte-multitarget/last-config.json. This is an internal file, not an
+    HTTP endpoint. Startup restores RF only; saved targets remain drafts until
+    their individual load-param POST. Sample rate is fixed at 61440000 Hz and
+    receive gain mode remains manual.
+servers:
+  - url: http://192.168.2.1:8080
+paths:
+  /api/v1:
+    get:
+      summary: List API endpoints and hardware profile
+      responses:
+        '200':
+          description: Endpoint index
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [api_version, hardware_profile, endpoints]
+                properties:
+                  api_version: {type: string, enum: [v1]}
+                  hardware_profile: {type: string, enum: [multitarget-v2]}
+                  endpoints: {type: array, items: {type: string}}
+  /healthz:
+    get:
+      summary: Report cached hardware health
+      description: >-
+        Uninitialized targets alone do not make the service degraded. Failed
+        recovery returns 503. Service startup uses /api/v1/system for HTTP
+        readiness so a degraded daemon remains available for diagnostics.
+      responses:
+        '200':
+          description: Service healthy; some targets may still be uninitialized
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+        '503':
+          description: Hardware state became untrustworthy after failed recovery
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Health'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/system:
+    get:
+      summary: Get complete cached RF and four-target snapshot
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/rf/config:
+    get:
+      summary: Get complete cached snapshot including RF state
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      summary: Apply RF fields without applying any target
+      description: >-
+        RX/TX LO and bandwidth use common values. At least one of the four fields
+        is required. Unknown or duplicate keys, including sample_rate_hz, are
+        rejected. Values must match current hardware capabilities. A changed
+        carrier marks previously encoded targets needs_reapply; each target
+        remains unchanged until its own explicit load-param POST.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RfPatch'}
+            example: {carrier_hz: 2450000000, bandwidth_hz: 18000000, tx_gain_db: -10, rx_gain_db: 50}
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '503': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/rf/capabilities:
+    get:
+      summary: Observe actual RF and get ranges for the current PHY and LO band
+      description: Observed external RF changes update cached RF, revision and target needs_reapply before this response.
+      responses:
+        '200':
+          description: Re-query after carrier changes because receive gain limits can change
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RfCapabilities'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '503': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/rte/config:
+    get:
+      summary: Get complete snapshot including applied inputs and saved drafts
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/rte/status:
+    get:
+      summary: Get complete snapshot including last successful register images
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/rte/capabilities:
+    get:
+      summary: Get target limits calculated using the cached RF context
+      responses:
+        '200':
+          description: Fixed-point limits and DUT digital input/output distance reference
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetCapabilities'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/rte/targets/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TargetId'
+    get:
+      summary: Get complete cached snapshot for a valid target selection
+      description: The response includes all four targets, identified by id.
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        '404': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/rte/targets/{id}/load-param:
+    parameters:
+      - $ref: '#/components/parameters/TargetId'
+    post:
+      summary: Explicitly apply exactly one target's complete configuration
+      description: >-
+        All five fields are required, including the first apply. Other targets
+        may remain uninitialized. No id, targets array, LP value, raw address,
+        or additional/duplicate fields are accepted. The selected target alone
+        is staged, verified and committed; rollback also affects only this target.
+        A failed unrecoverable commit marks state unknown/degraded and blocks writes.
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TargetConfig'}
+            example: {enabled: true, range_m: 150.6, radial_velocity_mps: 10, gain_linear: 0.25, phase_offset_deg: 0}
+      responses:
+        '200': {$ref: '#/components/responses/Snapshot'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Invalid'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        '503': {$ref: '#/components/responses/Error'}
+        default: {$ref: '#/components/responses/Error'}
+components:
+  parameters:
+    TargetId:
+      name: id
+      in: path
+      required: true
+      description: Exact path component 1, 2, 3, or 4; leading zeros and lists are invalid.
+      schema: {type: string, enum: ['1', '2', '3', '4']}
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: >-
+        Use the quoted numeric ETag from a prior snapshot. A bare unsigned integer
+        is also accepted; weak ETags, lists, wildcard and unmatched quotes are rejected.
+      schema: {type: string, pattern: '^("[0-9]+"|[0-9]+)$', example: '"3"'}
+  headers:
+    ETag:
+      description: Quoted global in-process revision; obtain a new value after daemon restart.
+      schema: {type: string, pattern: '^"[0-9]+"$', example: '"3"'}
+  responses:
+    Snapshot:
+      description: Last-verified complete state; inspect warning and target state flags
+      headers:
+        ETag: {$ref: '#/components/headers/ETag'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Snapshot'}
+    Error:
+      description: Request or hardware failure; state may require re-query
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Conflict:
+      description: Revision mismatch; retrieve state and review edits before applying again
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Invalid:
+      description: Invalid JSON shape, field, value, quantization, RF context, or hardware state
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    PreconditionRequired:
+      description: If-Match is missing; retrieve a snapshot before changing configuration
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+  schemas:
+    Revision:
+      type: integer
+      format: int64
+      minimum: 0
+    Hz:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 9007199254740991
+    RfPatch:
+      type: object
+      description: LO readback may differ from the nominal carrier by up to 5 Hz due to PLL quantization. An already matching LO is not retuned. Bandwidth and gain readbacks must match exactly.
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        carrier_hz: {$ref: '#/components/schemas/Hz'}
+        bandwidth_hz: {$ref: '#/components/schemas/Hz'}
+        tx_gain_db:
+          type: number
+          format: double
+          description: Signed TX gain; -10 dB means 10 dB attenuation. Consult RF capabilities.
+        rx_gain_db:
+          type: number
+          format: double
+          description: Manual RX gain; range depends on carrier band. Consult RF capabilities.
+    NullableRfConfig:
+      type: object
+      nullable: true
+      description: Last successful RF request or startup RF restore, expanded to all four fields; null before either succeeds. Preserves the nominal carrier rather than replacing it with quantized readback.
+      additionalProperties: false
+      required: [carrier_hz, bandwidth_hz, tx_gain_db, rx_gain_db]
+      properties:
+        carrier_hz: {$ref: '#/components/schemas/Hz'}
+        bandwidth_hz: {$ref: '#/components/schemas/Hz'}
+        tx_gain_db: {type: number, format: double}
+        rx_gain_db: {type: number, format: double}
+    TargetConfig:
+      type: object
+      additionalProperties: false
+      required: [enabled, range_m, radial_velocity_mps, gain_linear, phase_offset_deg]
+      properties:
+        enabled: {type: boolean}
+        range_m:
+          type: number
+          format: double
+          minimum: 0
+          description: Distance at apply time; use capabilities for the valid DUT-referenced range.
+        radial_velocity_mps:
+          type: number
+          format: double
+          description: Positive means receding, with Doppler -2*v*fc/c; does not auto-update range.
+        gain_linear:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 31.999999046325684
+          description: FPGA digital coefficient, independent of RF gain; does not guarantee unclipped output.
+        phase_offset_deg: {type: number, format: double, description: Additional phase in degrees}
+    NullableTargetConfig:
+      type: object
+      nullable: true
+      additionalProperties: false
+      required: [enabled, range_m, radial_velocity_mps, gain_linear, phase_offset_deg]
+      properties:
+        enabled: {type: boolean}
+        range_m: {type: number, format: double}
+        radial_velocity_mps: {type: number, format: double}
+        gain_linear: {type: number, format: double}
+        phase_offset_deg: {type: number, format: double}
+    RfState:
+      type: object
+      description: Actual driver readbacks. RX and TX LO must agree, but may differ from requested_rf.carrier_hz by up to 5 Hz. Target encoding uses this actual carrier.
+      required: [sample_rate_hz, carrier_hz, rx_lo_hz, tx_lo_hz, bandwidth_hz, rx_bandwidth_hz, tx_bandwidth_hz, tx_gain_db, rx_gain_db, gain_control_mode, compatible]
+      properties:
+        sample_rate_hz: {type: integer, format: int64, enum: [61440000], readOnly: true}
+        carrier_hz: {$ref: '#/components/schemas/Hz'}
+        rx_lo_hz: {$ref: '#/components/schemas/Hz'}
+        tx_lo_hz: {$ref: '#/components/schemas/Hz'}
+        bandwidth_hz: {$ref: '#/components/schemas/Hz'}
+        rx_bandwidth_hz: {$ref: '#/components/schemas/Hz'}
+        tx_bandwidth_hz: {$ref: '#/components/schemas/Hz'}
+        tx_gain_db: {type: number, format: double}
+        rx_gain_db: {type: number, format: double}
+        gain_control_mode: {type: string, enum: [manual, unsupported], readOnly: true}
+        compatible: {type: string, example: ad9364}
+    RegisterWord:
+      type: object
+      readOnly: true
+      required: [offset, value]
+      properties:
+        offset: {type: string, pattern: '^0x[0-9a-f]{3}$', example: '0x158'}
+        value: {type: string, pattern: '^0x[0-9a-f]{8}$', example: '0x00040000'}
+    AppliedState:
+      type: object
+      nullable: true
+      description: Last successful quantized image; retained as history if hardware becomes unknown. No independent active-bank readback is available.
+      required: [enabled, delay_samples, delay_range_m, range_phase_rad, doppler_hz, radial_velocity_mps, linear_gain, effective_radial_velocity_mps, registers]
+      properties:
+        enabled: {type: boolean}
+        delay_samples: {type: number, format: double}
+        delay_range_m: {type: number, format: double}
+        range_phase_rad: {type: number, format: double}
+        doppler_hz: {type: number, format: double}
+        radial_velocity_mps: {type: number, format: double, description: Quantized velocity at the encoded carrier}
+        linear_gain: {type: number, format: double}
+        effective_radial_velocity_mps:
+          type: number
+          format: double
+          nullable: true
+          description: Reinterpreted at the last verified current LO; null when hardware state is unknown.
+        registers:
+          type: object
+          readOnly: true
+          additionalProperties: false
+          required: [ID, FD, FRQ, PHOF, SC, EN]
+          description: Six last-successful words and actual offsets; LP readback is not fabricated or exposed.
+          properties:
+            ID: {$ref: '#/components/schemas/RegisterWord'}
+            FD: {$ref: '#/components/schemas/RegisterWord'}
+            FRQ: {$ref: '#/components/schemas/RegisterWord'}
+            PHOF: {$ref: '#/components/schemas/RegisterWord'}
+            SC: {$ref: '#/components/schemas/RegisterWord'}
+            EN: {$ref: '#/components/schemas/RegisterWord'}
+    TargetState:
+      type: object
+      required: [id, has_config, hardware_state_known, needs_reapply, encoded_carrier_hz, requested, saved, applied]
+      properties:
+        id: {type: integer, enum: [1, 2, 3, 4]}
+        has_config: {type: boolean, description: A complete target apply succeeded during this server process}
+        hardware_state_known: {type: boolean}
+        needs_reapply: {type: boolean, description: Current verified carrier differs from encoded_carrier_hz; user must explicitly apply this target}
+        encoded_carrier_hz: {type: integer, format: int64, minimum: 0, description: Carrier used for the last successful image; zero when uninitialized}
+        requested: {$ref: '#/components/schemas/NullableTargetConfig'}
+        saved:
+          $ref: '#/components/schemas/NullableTargetConfig'
+        applied: {$ref: '#/components/schemas/AppliedState'}
+    Snapshot:
+      type: object
+      required: [api_version, hardware_profile, revision, hardware_build_id, degraded, hardware_state_known, last_hardware_check_ms, warning, rf, requested_rf, targets]
+      properties:
+        api_version: {type: string, enum: [v1]}
+        hardware_profile: {type: string, enum: [multitarget-v2]}
+        revision: {$ref: '#/components/schemas/Revision'}
+        hardware_build_id: {type: integer, format: int64, example: 2609182026}
+        degraded: {type: boolean, description: Unrecoverable state failure; all changes are blocked}
+        hardware_state_known:
+          type: boolean
+          description: All four target states are known. False before all targets are applied does not by itself block changes.
+        last_hardware_check_ms: {type: integer, format: int64, minimum: 0, description: Last hardware verification using board CLOCK_MONOTONIC milliseconds}
+        warning: {type: string, description: Persistence or restore diagnostic; an empty string means no warning}
+        rf: {$ref: '#/components/schemas/RfState'}
+        requested_rf:
+          $ref: '#/components/schemas/NullableRfConfig'
+        targets:
+          type: array
+          minItems: 4
+          maxItems: 4
+          description: Unique target ids 1..4. Requested/applied are last successful records; saved values are drafts and never auto-latched.
+          items: {$ref: '#/components/schemas/TargetState'}
+    NumericRange:
+      type: object
+      required: [min, max, step]
+      properties:
+        min: {type: number, format: double}
+        max: {type: number, format: double}
+        step: {type: number, format: double, minimum: 0, exclusiveMinimum: true}
+    HzRange:
+      type: object
+      required: [min, max, step]
+      properties:
+        min: {$ref: '#/components/schemas/Hz'}
+        max: {$ref: '#/components/schemas/Hz'}
+        step: {type: integer, enum: [1]}
+    RfCapabilities:
+      type: object
+      required: [revision, carrier_hz, bandwidth_hz, tx_gain_db, rx_gain_db, sample_rate_hz, sample_rate_writable, gain_control_mode]
+      properties:
+        revision: {$ref: '#/components/schemas/Revision'}
+        carrier_hz:
+          allOf:
+            - $ref: '#/components/schemas/HzRange'
+            - type: object
+              required: [readback_tolerance_hz]
+              properties:
+                readback_tolerance_hz:
+                  type: integer
+                  enum: [5]
+                  description: Maximum accepted digital LO readback difference, not an oscillator accuracy specification.
+        bandwidth_hz: {$ref: '#/components/schemas/HzRange'}
+        tx_gain_db: {$ref: '#/components/schemas/NumericRange'}
+        rx_gain_db: {$ref: '#/components/schemas/NumericRange'}
+        sample_rate_hz: {type: integer, format: int64, enum: [61440000]}
+        sample_rate_writable: {type: boolean, enum: [false]}
+        gain_control_mode: {type: string, enum: [manual]}
+    TargetCapabilities:
+      type: object
+      required: [revision, target_count, min_range_m, max_range_m, max_abs_velocity_mps, range_resolution_m, phase_resolution_rad, frequency_resolution_hz, max_gain_linear, fixed_latency_samples, rf_calibrated, range_reference]
+      properties:
+        revision: {$ref: '#/components/schemas/Revision'}
+        target_count: {type: integer, enum: [4]}
+        min_range_m: {type: number, format: double}
+        max_range_m: {type: number, format: double}
+        max_abs_velocity_mps: {type: number, format: double}
+        range_resolution_m: {type: number, format: double, description: Distance increment from delay quantization, not radar resolving power}
+        phase_resolution_rad: {type: number, format: double}
+        frequency_resolution_hz: {type: number, format: double}
+        max_gain_linear: {type: number, format: double}
+        fixed_latency_samples: {type: number, format: double}
+        rf_calibrated: {type: boolean, enum: [false]}
+        range_reference: {type: string, enum: [DUT digital input/output]}
+    Health:
+      type: object
+      required: [status, hardware_state_known]
+      properties:
+        status: {type: string, enum: [ok, degraded]}
+        hardware_state_known: {type: boolean}
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code]
+          properties:
+            code: {type: string}
+            field: {type: string}
+            message: {type: string}
+        revision: {$ref: '#/components/schemas/Revision'}
